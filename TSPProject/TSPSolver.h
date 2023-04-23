@@ -1,8 +1,10 @@
 #pragma once
+#include <algorithm>
 #include <iostream>
 #include <iomanip>
 #include <random>
 #include <ctime>
+
 #include "Graph.h"
 
 /// <summary>
@@ -36,7 +38,7 @@ protected:
 	/// <summary>
 	/// „исло вершин в графе
 	/// </summary>
-	int _size;
+	int _n_cities;
 
 public:
 
@@ -56,4 +58,15 @@ public:
 	/// </summary>
 	/// <returns> длина (стоимость) решени€ </returns>
 	int len() { return _len; }
+
+	/// <summary>
+	/// —равнение алгоритмов посредством длин 
+	/// найденных решений
+	/// </summary>
+	/// <param name="solver"> решатель </param>
+	/// <returns> значение _len ћ≈Ќ№Ў≈ solver.len()  </returns>
+	bool operator < (TSPSolver& solver)
+	{
+		return _len < solver.len();
+	}
 };

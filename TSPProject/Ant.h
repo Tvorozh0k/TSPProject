@@ -18,7 +18,7 @@ class Ant : public TSPSolver
 		int pos = 0;
 		double sum = 0;
 
-		for (int i = 0; i < _size; ++i)
+		for (int i = 0; i < _n_cities; ++i)
 			if (!visited[i])
 			{
 				choices[pos++] = i;
@@ -45,14 +45,14 @@ public:
 	/// <param name="eta"> матрица привлекательности ребер (в степени beta) </param>
 	void solve(Graph& g, int s, vector<int>& visited, vector<int>& choices, vector<vector<double>>& weights)
 	{
-		_size = g.n();
-		_solution.resize(_size + 1);
+		_n_cities = g.n();
+		_solution.resize(_n_cities + 1);
 
 		// путь: s -> ...
 		_solution[0] = s; _len = 0;
 		visited[s] = 1;
 
-		for (int i = 1; i < _size; ++i)
+		for (int i = 1; i < _n_cities; ++i)
 		{
 			int from = _solution[i - 1];
 
@@ -65,8 +65,8 @@ public:
 		}
 
 		// путь: s -> ... -> t -> s
-		int t = _solution[_size - 1];
-		_solution[_size] = s; _len += g[t][s];
+		int t = _solution[_n_cities - 1];
+		_solution[_n_cities] = s; _len += g[t][s];
 	}
 
 	/// <summary>
@@ -76,20 +76,9 @@ public:
 	{
 		cout << "Ant (найденное решение): ";
 
-		for (int i = 0; i < _size; ++i)
+		for (int i = 0; i < _n_cities; ++i)
 			cout << _solution[i] << " - ";
 
 		cout << _solution.back() << ", длина пути = " << _len << "\n";
-	}
-
-	/// <summary>
-	/// —равнение муравьев посредством длин 
-	/// найденных решений
-	/// </summary>
-	/// <param name="ant"> муравей </param>
-	/// <returns> значение _len ћ≈Ќ№Ў≈ ant.len() </returns>
-	bool operator < (Ant& ant)
-	{
-		return _len < ant.len();
 	}
 };

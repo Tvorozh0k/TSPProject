@@ -1,7 +1,9 @@
 #pragma once
-#include <algorithm>
+#include <string>
 #include <map>
-#include "TSPSolver.h"
+#include <any>
+
+#include "KOptSolver.h"
 #include "Ant.h"
 
 /// <summary>
@@ -23,9 +25,37 @@ public:
 	ACOType _type;
 
 	/// <summary>
-	/// Гиперпараметры
+	/// Гиперпараметры:
+	/// 
+	/// alpha - значимость феромонов,
+	/// beta - значимость привлекательности ребер,
+	/// rho - коэффициент испарения феромонов,
+	/// tau0 - изначальное кол-во феромонов на ребрах,
+	/// tau_min - нижняя граница возможного числа феромонов,
+	/// tau_max - верхняя граница возможного числа феромонов,
+	/// причем tau_min = a * tau_max 
 	/// </summary>
-	double _alpha, _beta, _rho, _m, _tau0, _max_iter, _e;
+	double _alpha, _beta, _rho, _tau0, _tau_min, _tau_max, _a;
+
+	/// <summary>
+	/// Гиперпараметры:
+	/// 
+	/// n_ants - число муравьев,
+	/// max_iter - число поколений,
+	/// e - коэффициент значимости лучшего тура
+	/// </summary>
+	int _n_ants, _max_iter, _e;
+
+	/// <summary>
+	/// Гиперпараметры:
+	/// 
+	/// bst_tour_type - тип лучшего тура,
+	/// обновляющего феромоны на ребрах
+	/// local_search_type - алгоритм локальной 
+	/// оптимизации решения
+	/// local_search_tours - какие туры оптимизируются
+	/// </summary>
+	string _bst_tour_type, _local_search_type, _local_search_tours;
 
 	/// <summary>
 	/// Конструктор
@@ -37,21 +67,44 @@ public:
 	/// <param name="m"> число мурвьев </param>
 	/// <param name="tau0"> начальное число феромонов </param>
 	/// <param name="max_iter"> число поколений </param>
-	ACOSolver(ACOType type, map<string, double> params) : _type(type)
+	ACOSolver(ACOType type, map<string, any> params) : _type(type)
 	{
 		// Повсеместные параметры
-		_alpha = params["alpha"];
-		_beta = params["beta"];
-		_rho = params["rho"];
-		_m = params["m"];
-		_tau0 = params["tau0"];
-		_max_iter = params["max_iter"];
+		_alpha = any_cast<double>(params["alpha"]);
+		_beta = any_cast<double>(params["beta"]);
+		_rho = any_cast<double>(params["rho"]);
+		_tau0 = any_cast<double>(params["tau0"]);
+
+		_n_ants = any_cast<int>(params["n_ants"]);
+		_max_iter = any_cast<int>(params["max_iter"]);
+
+		_local_search_type = any_cast<string>(params["local_search_type"]);
+
+		// В случае наличия локального поиска оптимального решения
+		if (_local_search_type != "None") _local_search_tours = any_cast<string>(params["local_search_tours"]);
+		else  _local_search_tours = "None";
 
 		// В случае элитной муравьиной системы
-		if (type == ElitistAS) _e = params["e"];
+		if (type == ElitistAS)
+		{
+			_e = any_cast<int>(params["e"]);
+			_bst_tour_type = "best-so-far";
+		}
 
 		// В случае ранговой муравьиной системы
-		if (type == RankBasedAS) _e = params["w"];
+		if (type == RankBasedAS)
+		{
+			_e = any_cast<int>(params["w"]);
+			_bst_tour_type = "best-so-far";
+		}
+
+		// В случае максминной муравьиной системы
+		if (type == MaxMinAS)
+		{
+			_e = 1;
+			_a = any_cast<double>(params["a"]);
+			_bst_tour_type = any_cast<string>(params["bst_tour_type"]);
+		}
 	}
 
 	/// <summary>
@@ -61,106 +114,169 @@ public:
 	void solve(Graph& g)
 	{
 		_len = INF;
-		_size = g.n();
+		_n_cities = g.n();
+
+		// В случае максминной муравьиной системы
+		if (_type == MaxMinAS)
+		{
+			_tau_max = _tau0;
+			_tau_min = _a * _tau_max;
+		}
+		else
+		{
+			_tau_min = 0;
+			_tau_max = INF;
+		}
 
 		// матрица концентрации феромонов на ребрах графа
-		vector<vector<double>> tau(_size, vector<double>(_size, _tau0));
+		vector<vector<double>> tau(_n_cities, vector<double>(_n_cities, _tau0));
 
 		// матрица привлекательности ребер графа 
 		// (все элементы возведены в степень -_beta)
-		vector<vector<double>> eta_beta(_size, vector<double>(_size));
+		vector<vector<double>> eta_beta(_n_cities, vector<double>(_n_cities));
 
-		for (int i = 0; i < _size; ++i)
-			for (int j = 0; j < _size; ++j)
+		for (int i = 0; i < _n_cities; ++i)
+			for (int j = 0; j < _n_cities; ++j)
 				eta_beta[i][j] = pow(g[i][j], -_beta);
 
 		// матрица весов (значимостей) каждого из ребер
 		// (см. формула вероятности попадания муравья в тот или иной город)
-		vector<vector<double>> weights(_size, vector<double>(_size));
+		vector<vector<double>> weights(_n_cities, vector<double>(_n_cities));
 
 		// все вершины графа
-		vector<int> vertices(_size);
+		vector<int> vertices(_n_cities);
 
-		for (int i = 0; i < _size; ++i)
+		for (int i = 0; i < _n_cities; ++i)
 			vertices[i] = i;
 
 		// генерируем муравьев 
-		vector<Ant> ants(_m);
+		vector<Ant> ants(_n_ants);
 
 		// visited[i] = 0 <=> вершина i НЕ посещена
 		// visited[i] = 1 <=> вершина i посещена
-		vector<int> visited(_size);
+		vector<int> visited(_n_cities);
 
 		// не посещенные вершины
-		vector<int> choices(_size);
+		vector<int> choices(_n_cities);
 
 		for (int it = 0; it < _max_iter; ++it)
 		{
-			for (int i = 0; i < _size; ++i)
-				for (int j = 0; j < _size; ++j)
+			for (int i = 0; i < _n_cities; ++i)
+				for (int j = 0; j < _n_cities; ++j)
 					weights[i][j] = pow(tau[i][j], _alpha) * eta_beta[i][j];
 
 			// перемешиваем вершины графа
 			shuffle(vertices.begin(), vertices.end(), gen);
 
-			// позиция лучшего решения итерации
-			int pos = 0;
+			// лучшее за итерацию решение
+			vector<int> iter_best_sol;
+			int iter_best_len = INF;
 
 			// муравей ищет решение
-			for (int i = 0; i < _m; ++i)
+			for (int i = 0; i < _n_ants; ++i)
 			{
 				ants[i].solve(g, vertices[i], visited, choices, weights);
 
-				for (int j = 0; j < _size; ++j)
+				for (int j = 0; j < _n_cities; ++j)
 					visited[j] = 0;
 
-				// сохраняем решение
-				if (ants[i].len() < ants[pos].len()) pos = i;
+				// В случае наличия локального поиска оптимального решения
+				if (_local_search_tours == "all")
+				{
+					KOptSolver ls_ant;
+					ls_ant.solve(g, _local_search_type, ants[i].solution(), ants[i].len());
+
+					if (ls_ant.len() < iter_best_len)
+					{
+						iter_best_sol = ls_ant.solution();
+						iter_best_len = ls_ant.len();
+					}
+				}
+				else if (ants[i].len() < iter_best_len)
+				{
+					iter_best_sol = ants[i].solution();
+					iter_best_len = ants[i].len();
+				}
+			}	
+
+			// В случае наличия локального поиска оптимального решения
+			if (_local_search_tours == "best_sol")
+			{
+				KOptSolver ls_best;
+				ls_best.solve(g, _local_search_type, iter_best_sol, iter_best_len);
+
+				iter_best_sol = ls_best.solution();
+				iter_best_len = ls_best.len();
 			}
 
 			// сохраняем решение
-			if (ants[pos].len() < _len)
+			if (iter_best_len < _len)
 			{
-				_solution = ants[pos].solution();
-				_len = ants[pos].len();
+				_solution = iter_best_sol;
+				_len = iter_best_len;
+
+				// В случае максминной муравьиной системы
+				if (_type == MaxMinAS)
+				{
+					_tau_max = 1.0 / _rho / _len;
+					_tau_min = _a * _tau_max;
+				}
 			}
 
 			// феромоны испаряются 
-			for (int i = 0; i < _size; ++i)
-				for (int j = 0; j < _size; ++j)
-					tau[i][j] *= _rho;
+			for (int i = 0; i < _n_cities; ++i)
+				for (int j = 0; j < _n_cities; ++j)
+					tau[i][j] = max(_tau_min, tau[i][j] * (1 - _rho));	
 
 			// В случае ранговой муравьиной системы
 			if (_type == RankBasedAS) sort(ants.begin(), ants.end());
 
-			int iter = (_type == RankBasedAS) ? _e - 1 : _m;
+			int iter;
+
+			if (_type == RankBasedAS || _type == MaxMinAS) iter = _e - 1;
+			else iter = _n_ants;
 
 			// оставляем след феромонов на ребрах 
 			for (int i = 0; i < iter; ++i)
 			{
 				vector<int> solution = ants[i].solution();
-				double w = ((_type == RankBasedAS) ? (_e - i - 1) : 1.0) / ants[i].len();
+				double w = ((_type == RankBasedAS) ? (_e - i - 1.0) : 1.0) / ants[i].len();
 
-				for (int j = 0; j < _size; ++j)
+				for (int j = 0; j < _n_cities; ++j)
 					tau[solution[j]][solution[j + 1]] += w;
 			}
 
-			// В случае элитной или ранговой муравьиной систем
-			if (_type == ElitistAS || _type == RankBasedAS)
+			// В случае НЕ классической муравьиной системы
+			if (_type != AS)
 			{
-				double w = _e / _len;
+				vector<int> solution;
+				double w;
 
-				for (int j = 0; j < _size; ++j)
-					tau[_solution[j]][_solution[j + 1]] += w;
+				if (_bst_tour_type == "best-so-far")
+				{
+					solution = _solution;
+					w = (double)_e / _len;
+				}
+				else 
+				{
+					solution = iter_best_sol;
+					w = (double)_e / iter_best_len;
+				}
+
+				for (int j = 0; j < _n_cities; ++j)
+					tau[solution[j]][solution[j + 1]] = min(_tau_max, tau[solution[j]][solution[j + 1]] + w);
 			}
 		}
 	}
 
+	/// <summary>
+	/// Выводим решение на экран
+	/// </summary>
 	void print()
 	{
 		cout << "ACOSolver (найденное решение): ";
 
-		for (int i = 0; i < _size; ++i)
+		for (int i = 0; i < _n_cities; ++i)
 			cout << _solution[i] << " - ";
 
 		cout << _solution.back() << ", длина пути = " << _len << "\n";

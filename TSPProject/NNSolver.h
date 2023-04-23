@@ -14,31 +14,31 @@ public:
 	/// </summary>
 	void solve(Graph& g)
 	{
-		_size = g.n();
+		_n_cities = g.n();
 
 		// visited[i] = 0 <=> вершина i НЕ посещена
 		// visited[i] = 1 <=> вершина i посещена
-		vector <int> visited(_size);
+		vector <int> visited(_n_cities);
 
 		// генерируем первую вершину случайно
-		uniform_int_distribution <int> interval_int(0, _size - 1);
+		uniform_int_distribution <int> interval_int(0, _n_cities - 1);
 		int cur = interval_int(gen);
 
-		_solution.resize(_size + 1);
+		_solution.resize(_n_cities + 1);
 
 		// путь: cur -> ... 
 		_solution[0] = cur; _len = 0;
 		visited[cur] = 1;
 
 		// достраиваем путь до конца
-		for (int i = 1; i < _size; ++i)
+		for (int i = 1; i < _n_cities; ++i)
 		{
 			// ищем вершину next
 			int next = cur, dist = INF;
 
 			// проходимся по всем НЕ посещенным вершинам j 
 			// и ещем наиболее близкую к вершине cur
-			for (int j = 0; j < _size; ++j)
+			for (int j = 0; j < _n_cities; ++j)
 				if (!visited[j] && g[cur][j] < dist)
 				{
 					next = j;
@@ -53,8 +53,8 @@ public:
 		}
 
 		// путь: s -> ... -> t -> s
-		int s = _solution[0], t = _solution[_size - 1];
-		_solution[_size] = s; _len += g[t][s];
+		int s = _solution[0], t = _solution[_n_cities - 1];
+		_solution[_n_cities] = s; _len += g[t][s];
 	}
 
 	/// <summary>
@@ -64,7 +64,7 @@ public:
 	{
 		cout << "NNSolver (найденное решение): ";
 
-		for (int i = 0; i < _size; ++i)
+		for (int i = 0; i < _n_cities; ++i)
 			cout << _solution[i] << " - ";
 
 		cout << _solution.back() << ", длина пути = " << _len << "\n";
