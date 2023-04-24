@@ -4,6 +4,7 @@
 #include <iomanip>
 #include <random>
 #include <ctime>
+#include <omp.h>
 
 #include "Graph.h"
 
@@ -11,6 +12,12 @@
 /// Формальная бесконечность
 /// </summary>
 const int INF = 1e9 + 7;
+
+/// <summary>
+/// Количество используемых потоков 
+/// (настраиваем значение САМИ в main.cpp)
+/// </summary>
+int GridThreadsNum;
 
 /// <summary>
 /// Генератор псевдослучайных чисел

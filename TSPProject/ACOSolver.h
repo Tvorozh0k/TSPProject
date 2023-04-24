@@ -135,6 +135,7 @@ public:
 		// (все элементы возведены в степень -_beta)
 		vector<vector<double>> eta_beta(_n_cities, vector<double>(_n_cities));
 
+		#pragma omp parallel for
 		for (int i = 0; i < _n_cities; ++i)
 			for (int j = 0; j < _n_cities; ++j)
 				eta_beta[i][j] = pow(g[i][j], -_beta);
@@ -146,6 +147,7 @@ public:
 		// все вершины графа
 		vector<int> vertices(_n_cities);
 
+		#pragma omp parallel for
 		for (int i = 0; i < _n_cities; ++i)
 			vertices[i] = i;
 
@@ -154,13 +156,14 @@ public:
 
 		// visited[i] = 0 <=> вершина i НЕ посещена
 		// visited[i] = 1 <=> вершина i посещена
-		vector<int> visited(_n_cities);
+		vector<vector<int>> visited(GridThreadsNum, vector<int>(_n_cities));
 
 		// не посещенные вершины
-		vector<int> choices(_n_cities);
+		vector<vector<int>> choices(GridThreadsNum, vector<int>(_n_cities));
 
 		for (int it = 0; it < _max_iter; ++it)
 		{
+			#pragma omp parallel for
 			for (int i = 0; i < _n_cities; ++i)
 				for (int j = 0; j < _n_cities; ++j)
 					weights[i][j] = pow(tau[i][j], _alpha) * eta_beta[i][j];
@@ -169,16 +172,19 @@ public:
 			shuffle(vertices.begin(), vertices.end(), gen);
 
 			// лучшее за итерацию решение
-			vector<int> iter_best_sol;
-			int iter_best_len = INF;
+			vector<vector<int>> iter_best_sol(GridThreadsNum);
+			vector<int> iter_best_len(GridThreadsNum, INF);
 
-			// муравей ищет решение
+			// муравей ищет решение	
+			#pragma omp parallel for schedule(dynamic) 
 			for (int i = 0; i < _n_ants; ++i)
 			{
-				ants[i].solve(g, vertices[i], visited, choices, weights);
+				int thread_num = omp_get_thread_num();
+
+				ants[i].solve(g, vertices[i], visited[thread_num], choices[thread_num], weights);
 
 				for (int j = 0; j < _n_cities; ++j)
-					visited[j] = 0;
+					visited[thread_num][j] = 0;
 
 				// В случае наличия локального поиска оптимального решения
 				if (_local_search_tours == "all")
@@ -186,34 +192,37 @@ public:
 					KOptSolver ls_ant;
 					ls_ant.solve(g, _local_search_type, ants[i].solution(), ants[i].len());
 
-					if (ls_ant.len() < iter_best_len)
+					if (ls_ant.len() < iter_best_len[thread_num])
 					{
-						iter_best_sol = ls_ant.solution();
-						iter_best_len = ls_ant.len();
+						iter_best_sol[thread_num] = ls_ant.solution();
+						iter_best_len[thread_num] = ls_ant.len();
 					}
 				}
-				else if (ants[i].len() < iter_best_len)
+				else if (ants[i].len() < iter_best_len[thread_num])
 				{
-					iter_best_sol = ants[i].solution();
-					iter_best_len = ants[i].len();
+					iter_best_sol[thread_num] = ants[i].solution();
+					iter_best_len[thread_num] = ants[i].len();
 				}
-			}	
+			}
+
+			// лучшее решение по потокам 
+			int pos_min = min_element(iter_best_len.begin(), iter_best_len.end()) - iter_best_len.begin();
 
 			// В случае наличия локального поиска оптимального решения
 			if (_local_search_tours == "best_sol")
 			{
 				KOptSolver ls_best;
-				ls_best.solve(g, _local_search_type, iter_best_sol, iter_best_len);
+				ls_best.solve(g, _local_search_type, iter_best_sol[pos_min], iter_best_len[pos_min]);
 
-				iter_best_sol = ls_best.solution();
-				iter_best_len = ls_best.len();
+				iter_best_sol[pos_min] = ls_best.solution();
+				iter_best_len[pos_min] = ls_best.len();
 			}
 
 			// сохраняем решение
-			if (iter_best_len < _len)
+			if (iter_best_len[pos_min] < _len)
 			{
-				_solution = iter_best_sol;
-				_len = iter_best_len;
+				_solution = iter_best_sol[pos_min];
+				_len = iter_best_len[pos_min];
 
 				// В случае максминной муравьиной системы
 				if (_type == MaxMinAS)
@@ -224,6 +233,7 @@ public:
 			}
 
 			// феромоны испаряются 
+			#pragma omp parallel for 
 			for (int i = 0; i < _n_cities; ++i)
 				for (int j = 0; j < _n_cities; ++j)
 					tau[i][j] = max(_tau_min, tau[i][j] * (1 - _rho));	
@@ -242,6 +252,7 @@ public:
 				vector<int> solution = ants[i].solution();
 				double w = ((_type == RankBasedAS) ? (_e - i - 1.0) : 1.0) / ants[i].len();
 
+				#pragma omp parallel for 
 				for (int j = 0; j < _n_cities; ++j)
 					tau[solution[j]][solution[j + 1]] += w;
 			}
@@ -259,10 +270,11 @@ public:
 				}
 				else 
 				{
-					solution = iter_best_sol;
-					w = (double)_e / iter_best_len;
+					solution = iter_best_sol[pos_min];
+					w = (double)_e / iter_best_len[pos_min];
 				}
 
+				#pragma omp parallel for 
 				for (int j = 0; j < _n_cities; ++j)
 					tau[solution[j]][solution[j + 1]] = min(_tau_max, tau[solution[j]][solution[j + 1]] + w);
 			}

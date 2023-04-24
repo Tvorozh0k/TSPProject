@@ -9,6 +9,9 @@ int main()
 	setlocale(LC_ALL, "Russian");
 	cout << fixed << setprecision(6);
 
+	GridThreadsNum = 1;
+	omp_set_num_threads(GridThreadsNum);
+
 	Graph g("ft53.txt");
 
 	NNSolver alg1;
