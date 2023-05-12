@@ -14,12 +14,6 @@
 const int INF = 1e9 + 7;
 
 /// <summary>
-/// Количество используемых потоков 
-/// (настраиваем значение САМИ в main.cpp)
-/// </summary>
-int GridThreadsNum;
-
-/// <summary>
 /// Генератор псевдослучайных чисел
 /// </summary>
 mt19937 gen(time(NULL));
